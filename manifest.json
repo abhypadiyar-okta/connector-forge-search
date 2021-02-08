@@ -8,7 +8,8 @@
       "matches": [
         "https://build.betaui.azuqua.com/*"
       ],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "css": ["forgeSearch.css"]
     }
   ],
   "background": {

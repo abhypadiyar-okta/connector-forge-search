@@ -1,5 +1,3 @@
-const results = ["Create Row", "Update Row"];
-
 let connector = "";
 
 //  possible results for each options
@@ -32,8 +30,8 @@ const createCodeSearchModal = () => {
   removeForgeSearchModal();
   const forgeSearchModal = createFogeSearchModal();
   const searchModalContent = `
-    <div>
-      <div style="border-bottom: 1px solid #e0e0e0; display: flex" >
+    <div class="fs-code-search">
+      <div class="fs-code-search__header" >
         <div>
           <h3>Search</h3>
         </div>
@@ -45,18 +43,26 @@ const createCodeSearchModal = () => {
         </div>
       </div>
       <br />
-      <div style='display:flex' id="fs-filter" >
+      <div class='fs-code-search__filter' id="fs-filter" >
         <select id="fs-filter-action">
           <option value=1 selected>Events</option>
           <option value=2>Actions</option>
           <option value=3>Functions</option>
           <option value=4>Connectors</option>
         </select>
-        <input autofocus type="text" placeholder="Enter partial text, press enter to see matching results ..." style="padding: 10px; margin: 5px; width: 400px;" id="fs-filter-input" />
-        <button style="margin: 5px; width: 150px;" id="fs-filter-recent"><i class="icon fa fa-history"></i> Recent</button>
+        <input 
+          autofocus 
+          type="text" 
+          placeholder="Enter partial text, press enter to see matching results ..." 
+          id="fs-filter-input" 
+        />
+        <button id="fs-filter-recent">
+          <i class="icon fa fa-history"></i> 
+          Recent
+        </button>
       </div>
       <div>
-        <ul style="padding-left:0px; list-style:none" id="fs-elems" />
+        <ul class="fs-code-search__list" id="fs-elems" />
       </div>
       <div>
         <div>
@@ -81,7 +87,7 @@ const createCodeSearchModal = () => {
 const createFogeSearchModal = () => {
   const modal = document.createElement('section');
   modal.id="forge-search-modal";
-  modal.style.cssText="position:absolute; border-radius:8px; top: 50vh; left: 50vw; padding: 15px; background-color: white; padding: 15px;color: black; transform:translate(-50%, -75%); box-shadow: 0 3px 7px rgba(0, 0, 0, 0.3)";
+  modal.className = "fs-search-modal";
   return modal;
 };
 
@@ -180,7 +186,6 @@ const updateCodeSearchModalWithResults = (results, resultItemListener) => {
 
   results.forEach(result => {
     const liItem = document.createElement("li");
-    liItem.style="padding: 8px; color:#0AE; cursor: pointer";
     liItem.innerHTML= `<div>${result.method}</div>`;
     liItem.setAttribute('data-section', result.section);
     resultElems.appendChild(liItem);
@@ -271,7 +276,8 @@ const openSection = async (sectionIdx) => {
     let sections =  document.querySelectorAll(".left-nav .left-nav-category");
     const selectedSection = sections[sectionIdx];
     let openSectionInterval = setInterval(() => {
-      const hasSectionOpened = selectedSection.querySelectorAll(".fa-plus-circle") && selectedSection.querySelectorAll(".fa-plus-circle").length > 0;
+      const hasSectionOpened =  selectedSection.querySelectorAll(".fa-plus-circle") && 
+                                selectedSection.querySelectorAll(".fa-plus-circle").length > 0;
       if (hasSectionOpened) {
         clearInterval(openSectionInterval);
         openSectionInterval = undefined;
@@ -288,12 +294,12 @@ const openConnectorSearch = async () => {
   return new Promise((resolve, reject) => {
     let selectorBtn =  document.querySelector(".channel-selector-button");
     let openSearchBtnInterval = setInterval(() => {
-      const isChannelListLoaded = document.querySelectorAll(".channel-list-item") && document.querySelectorAll(".channel-list-item").length > 0;
+      const isChannelListLoaded = document.querySelectorAll(".channel-list-item") && 
+                                  document.querySelectorAll(".channel-list-item").length > 0;
       if (isChannelListLoaded) {
         clearInterval(openSearchBtnInterval);
         openSearchBtnInterval = undefined;
         // close the filter section
-        
         resolve();
         return;
       } else {
@@ -308,13 +314,21 @@ const channelDropdown =  document.querySelectorAll(".channel-dropdown")[0];
 if (channelDropdown) {
   channelDropdown.addEventListener('click', async (e) => {
     let channelListItems = [];
+
+    //it should have valid text.
+    if (e.target.innerHTML.length === 0) {
+      return;
+    }
+    console.log(e.target.innerHTML);
     channelListItems = document.querySelectorAll(".channel-list-item");
-    if (channelListItems && channelListItems.length > 0) {
-      const progressModal = createConnectInfoProgressModal();
-      addForgeSearchModal(progressModal);
-      await collectConnectorInfo();
-      connector = document.querySelector(".channel-selector-button h2").innerHTML;
-      removeForgeSearchModal();
+    if (channelListItems && channelListItems.length > 0 && !e.target.innerHTML.includes("New Connector")) {
+      setTimeout(async () => {
+        const progressModal = createConnectInfoProgressModal();
+        addForgeSearchModal(progressModal);
+        await collectConnectorInfo();
+        connector = document.querySelector(".channel-selector-button h2").innerHTML;
+        removeForgeSearchModal();
+      }, 0);
     }
   })
 }
@@ -324,7 +338,7 @@ document.addEventListener('keydown', (e) => {
   if (e.metaKey) {
     showSearchModal();
   }
-
+  console.log(e.keyCode);
   if (e.ctrlKey && e.keyCode == 65) {
     const action = document.getElementById("fs-filter-action");
     if (action) {
@@ -341,6 +355,12 @@ document.addEventListener('keydown', (e) => {
     const action = document.getElementById("fs-filter-action");
     if (action) {
       action.selectedIndex = 2;
+    }
+  }
+  else if (e.ctrlKey && e.keyCode == 67) {
+    const action = document.getElementById("fs-filter-action");
+    if (action) {
+      action.selectedIndex = 3;
     }
   }
 });

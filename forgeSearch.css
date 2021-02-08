@@ -1,0 +1,41 @@
+.fs-search-modal {
+  position:absolute; 
+  border-radius: 8px; 
+  top: 50vh; left: 50vw; 
+  padding: 15px; 
+  background-color: white; 
+  color: black; 
+  transform:translate(-50%, -75%); 
+  box-shadow: 0 3px 7px rgba(0, 0, 0, 0.3);
+}
+
+.fs-code-search__header {
+  border-bottom: 1px solid #e0e0e0; 
+  display: flex;
+}
+
+.fs-code-search__filter {
+  display: flex;
+}
+
+.fs-code-search__filter input {
+  padding: 10px; 
+  margin: 5px; 
+  width: 400px;
+}
+
+.fs-code-search__filter button {
+  margin: 5px; 
+  width: 150px;
+}
+
+.fs-code-search__list {
+  padding-left:0px; 
+  list-style:none;
+}
+
+.fs-code-search__list li {
+  padding: 8px; 
+  color:#0AE; 
+  cursor: pointer;
+}
