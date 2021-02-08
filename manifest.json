@@ -1,0 +1,20 @@
+{
+  "manifest_version": 2,
+  "name": "Forge Spotlight",
+  "version": "0.1",
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://build.betaui.azuqua.com/*"
+      ],
+      "js": ["content.js"]
+    }
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": true
+  }
+}
