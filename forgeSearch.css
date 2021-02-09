@@ -29,7 +29,13 @@
   width: 150px;
 }
 
-.fs-code-search__list {
+.fs-code-search__filter input,
+.fs-code-search__filter button,
+.fs-code-search__filter select {
+  height: 45px;
+}
+
+.fs-code-search__list ul {
   padding-left:0px; 
   list-style:none;
 }
@@ -50,7 +56,7 @@
   }
 }
 
-.fs-code-search__input i {
+.fs-code-search__field-input i {
   position: absolute;
   transform: translate(-25px, 15px);
 }
@@ -58,4 +64,17 @@
 .fs-code-search__connector {
   position: absolute;
   right: 15px;
+}
+
+.fs-code-search__connector h3 {
+  margin-bottom: 0px;
+}
+
+.fs-code-search__list {
+  max-height: 500px;
+  overflow-y: scroll;
+}
+
+.fs-code-search__help {
+  margin-top: 25px;
 }

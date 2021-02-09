@@ -10,7 +10,6 @@ const FIELD_SECTION_INDEX_MAPPING = {
 
 // ================================== CHROME EXTENSION DATA ===================================//
 let currentConnector = "";
-let connectors = [];
 
 //  possible results for each options
 let datastore = {};
@@ -35,8 +34,8 @@ const addHistoryRecord = (record) => {
 };
 
 const getSectionFromIndex = (index) => {
-  const entry = Object.entries().find(e => e.value == index);
-  return entry.key || "";
+  const entry = Object.entries(FIELD_SECTION_INDEX_MAPPING).find(e => e[1] == index);
+  return entry[0] || "";
 }
 
 // ============================= MODAL COMMONS ============================= //
@@ -78,24 +77,41 @@ const showSpotlightModal = () => {
   });
   
   if (!isModalEnabled()) {
-    const codeSearchModal = createCodeSearchModal();
-    addForgeSearchModal(codeSearchModal);
-    registerCodeSearchModalListeners();
+    const codeSearchModal = createSpotlightModal();
+    showModal(codeSearchModal);
+    registerSpotlightModalListeners();
     loadConnectors();
   }
 };
 
-const loadConnectors = () => {
+const loadConnectors = async () => {
   const value = window.localStorage.getItem("fs_connectors");
-  const connectors = JSON.parse(value).connectors || [];
-  if (!!connectors) {
-    openConnectorSearch();
-    connectors = getConnectors();
+  let connectors = [];
+  
+  if (value) {
+    connectors = JSON.parse(value).connectors || [];
+    if (connectors && connectors.length > 0) {
+      datastore['connectors'] = connectors;
+      return;
+    }
+  }
+
+  try {
+    document.querySelector("#fs-connector-sync__message").innerHTML = "Loading connector info ...";
+    document.querySelector("#fs-code-search__header i.fa-refresh").classList.add("fa-refesh--loading");
+    await openConnectorSearch();
+    connectors = await getConnectors();
+    document.querySelector(".channel-list-item").click();
+    datastore['connectors'] = connectors;
+    window.localStorage.setItem("fs_connectors", JSON.stringify({"timestamp": getTimestamp(), "connectors": connectors}));
+  } finally {
+    document.querySelector("#fs-code-search__header i.fa-refresh").classList.remove("fa-refesh--loading");
+    document.querySelector("#fs-connector-sync__message").innerHTML = "";
   }
 };
 
 const createSpotlightModal = () => {
-  removeModal();
+  hideModal();
   const modal = createModal();
   const spotlightContent = `
     <div class="fs-code-search">
@@ -106,18 +122,18 @@ const createSpotlightModal = () => {
         <div class="fs-code-search__connector">
           <h3> 
             <i id="fs-connector-sync" class="icon fa fa-refresh"></i>
-            <span>Connector: [ ${connector} ]</span>
+            <span>Connector: [ ${currentConnector} ]</span>
           </h3>
-          <p></p>
+          <span id="fs-connector-sync__message"></p>
         </div>
       </section>
       <br />
       <section class='fs-code-search__filter' id="fs-code-search__filter" >
         <div>
           <select>
-            <option value='events' selected>Events</option>
+            <option value='events'>Events</option>
             <option value='actions'>Actions</option>
-            <option value='events'>Functions</option>
+            <option value='functions'>Functions</option>
             <option value='connectors'>Connectors</option>
           </select>
         </div>
@@ -143,16 +159,16 @@ const createSpotlightModal = () => {
       <section class="fs-code-search__help" id="fs-code-search__help">
         <div>
           <i class="info fa fa-info-circle"></i>
-          <span>Developer tips</span>
+          <span>Keyboard shortcuts</span>
         </div>
         <div>
-          <span>Use Ctrl + e | a | f | c (Select Events | Actions | Functions | Connectors )</span>
+          <span>Use Ctrl + e | a | f | c to select Events | Actions | Functions | Connectors  in select field next to input</span>
         </div>
         <div>
-          <span>Press Escape to close the search</span>
+          <span>Press escape to close  spotlight</span>
         </div>
         <div>
-          <span>Click refresh icon near connector to force refresh list of connectors</span>
+          <span>Click refresh icon next to connector, to reload list of connectors.</span>
         </div>
       </section>
     </div>`;
@@ -173,11 +189,18 @@ const registerSpotlightModalListeners = () => {
   const fieldInput = document.querySelector("#fs-code-search__filter input");
   fieldInput.addEventListener('keydown', e => {
     if (e.keyCode == 13) {
-      const searchText = fieldInput.value;
       const field = document.querySelector("#fs-code-search__filter select").value;
-
+      if (currentConnector.length == 0 && field !== "connectors") {
+        spotlightResultInfoMessage("Please select a connector by Ctrl+c to set connector option, enter a value in input box & press enter to see results");
+        return;
+      }
+      const searchText = fieldInput.value;
       const results = datastore[field];
       const matchingResults = getMatchingResults(results, searchText);
+
+      if (!matchingResults || matchingResults.length === 0) {
+        spotlightResultInfoMessage("Can't find a match meeting your request");
+      }
 
       const ul = document.querySelector("#fs-code-search__list ul");
       if (field === "connectors") {
@@ -187,11 +210,13 @@ const registerSpotlightModalListeners = () => {
         });
 
         const lis = document.querySelectorAll("#fs-code-search__list ul li");
+        document.querySelectorAll("#fs-code-search__list ul").innerHTML = "";
         lis.forEach((li) => {
-          document.addEventListener('click', (e) => {
-            const connector = e.getAttribute('data-connector');
-            openConnectorSearch();
-            selectConnector(connector);
+          li.addEventListener('click', async (e) => {
+            const connector = e.target.getAttribute('data-connector');
+            await openConnectorSearch();
+            await selectConnector(connector);
+            currentConnector = connector;
           });
         });
       }
@@ -203,14 +228,19 @@ const registerSpotlightModalListeners = () => {
         });
 
         const lis = document.querySelectorAll("#fs-code-search__list ul li");
+        document.querySelectorAll("#fs-code-search__list ul").innerHTML = "";
         lis.forEach((li) => {
-          document.addEventListener('click', (e) => {
-            const connector = e.getAttribute("data-connector");
-            const method = e.getAttribute("data-method");
-            const field = e.getAttribute("data-field");
+          li.addEventListener('click', async (e) => {
+            const connector = e.target.getAttribute("data-connector");
+            const method = e.target.getAttribute("data-method");
+            const field = e.target.getAttribute("data-field");
 
-            openSection(FIELD_SECTION_INDEX_MAPPING[field]);
+            addHistoryRecord({connector, field, method});
+
+            await openSection(FIELD_SECTION_INDEX_MAPPING[field]);
             selectMethod(FIELD_SECTION_INDEX_MAPPING[field], method);
+
+            hideModal();
           });
         });
       }
@@ -221,22 +251,23 @@ const registerSpotlightModalListeners = () => {
   const recentButton = document.querySelector("#fs-code-search__filter button");
   recentButton.addEventListener('click', async (e) => {
     const ul = document.querySelector("#fs-code-search__list ul");
-
+    document.querySelectorAll("#fs-code-search__list ul").innerHTML = "";
     historyRecords.forEach(historyRecord => {
-      const li = createSpotlightResultListItem(matchingResult, {connector: historyRecord.connnector, field: historyRecord.field, method: historyRecord.method});
+      const li = createSpotlightResultListItem(`[${historyRecord.connector}] ${historyRecord.method}`, {connector: historyRecord.connector, field: historyRecord.field, method: historyRecord.method});
       ul.appendChild(li);
     });
 
     const lis = document.querySelectorAll("#fs-code-search__list ul li");
+    document.querySelectorAll("#fs-code-search__list ul").innerHTML = "";
     lis.forEach((li) => {
-      document.addEventListener('click', (e) => {
-        const connector = e.getAttribute('data-connector');
-        const method = e.getAttribute("data-method");
-        const field = e.getAttribute("data-field");
+      li.addEventListener('click', async (e) => {
+        const connector = e.target.getAttribute('data-connector');
+        const method = e.target.getAttribute("data-method");
+        const field = e.target.getAttribute("data-field");
 
-        openConnectorSearch();
-        selectConnector(connector);
-        openSection(FIELD_SECTION_INDEX_MAPPING[field]);
+        await openConnectorSearch();
+        await selectConnector(connector);
+        await openSection(FIELD_SECTION_INDEX_MAPPING[field]);
         selectMethod(FIELD_SECTION_INDEX_MAPPING[field], method);
       });
     });
@@ -249,10 +280,7 @@ const registerSpotlightModalListeners = () => {
 
       await openConnectorSearch();
       const connectors = await getConnectors();
-
-      // done to close the filter section.
       document.querySelector(".channel-list-item").click();
-
       datastore['connectors'] = connectors;
 
       // save to local storage.
@@ -267,13 +295,16 @@ const registerSpotlightModalListeners = () => {
 
 const createSpotlightResultListItem = (value, attrs) => {
   const li = document.createElement('li');
-  li.innerHTML = label;
+  li.innerHTML = value;
 
   const ul = document.querySelector("#fs-code-search__list ul");
-  attrs.forEach((attr) => {
-    const attributeName = `$data-${attr.key}`;
-    li.setAttribute(attributeName, attr.value);
+  Object.keys(attrs).forEach((attr) => {
+    const attributeName = `data-${attr}`;
+    const attributeValue = attrs[attr];
+
+    li.setAttribute(attributeName, attributeValue);
   });
+  return li;
 }
 
 
@@ -294,6 +325,11 @@ const createConnectorInfoModal = () => {
   return modal;
 };
 
+const spotlightResultInfoMessage = (message) => {
+  const ul = document.querySelector("#fs-code-search__list ul");
+  ul.innerHTML = "";
+  ul.innerHTML = `<li style="color: red; font-size-bold; text-align-center;">${message}</li>`;
+}
 
 
 //========================== NAV HELPERS ==========================================//
@@ -369,7 +405,7 @@ const recordConnectorInfo = async () => {
      if (!datastore[section]) {
        datastore[section] = [];
      }
-     const methods = getMethodsInSection(selectedSection);
+     const methods = getMethodsInSection(sections[sectionIdx]);
      datastore[section] = methods;
    }
   }
@@ -388,13 +424,31 @@ const recordConnectorInfo = async () => {
  }
  
  const selectConnector = (connector) => {
-   const channelNames = document.querySelectorAll(".channel-list-item .channel-name");
-   for( let channelNameIdx = 0; channelNameIdx < channelNames.length; channelNameIdx++) {
-     if (channelNames.item(channelNameIdx).innerHTML === connector) {
-       channelNames.item(channelNameIdx).click();
-       break;
-     }
-   }
+   return new Promise((resolve, reject) => {
+    const channelNames = document.querySelectorAll(".channel-list-item .channel-name");
+    for( let channelNameIdx = 0; channelNameIdx < channelNames.length; channelNameIdx++) {
+      if (channelNames.item(channelNameIdx).innerHTML.includes(connector)) {
+        channelNames.item(channelNameIdx).click();
+        break;
+      }
+    }
+
+    let waitForModalClosedInterval = null;
+    let isModalClosed = () => {
+      const modalEnabled = isModalEnabled();
+      if (!modalEnabled) {
+        clearInterval(waitForModalClosedInterval);
+        waitForModalClosedInterval = undefined;
+        setTimeout(() => {
+          resolve();
+        }, 200);
+      } else {
+        clearInterval(waitForModalClosedInterval);
+        waitForModalClosedInterval = setInterval(isModalClosed, 200);
+      }
+    };
+    waitForModalClosedInterval = setInterval(isModalClosed, 200);
+   });
  };
 
 
@@ -410,16 +464,15 @@ if (channelDropdown) {
     if (e.target.innerHTML.length === 0) {
       return;
     }
-    console.log(e.target.innerHTML);
     channelListItems = document.querySelectorAll(".channel-list-item");
     if (channelListItems && channelListItems.length > 0 && !e.target.innerHTML.includes("New Connector")) {
       setTimeout(async () => {
-        const progressModal = createP();
-        addForgeSearchModal(progressModal);
+        const progressModal = createConnectorInfoModal();
+        showModal(progressModal);
 
         await recordConnectorInfo();
         
-        connector = document.querySelector(".channel-selector-button h2").innerHTML;
+        currentConnector = document.querySelector(".channel-selector-button h2").innerHTML;
         hideModal();
       }, 0);
     }
@@ -429,32 +482,27 @@ if (channelDropdown) {
 // show the search modal
 document.addEventListener('keydown', (e) => {
   if (e.metaKey) {
-    showSearchModal();
+    showSpotlightModal();
   }
-  console.log(e.keyCode);
-  if (e.ctrlKey && e.keyCode == 65) {
-    const action = document.getElementById("fs-filter-action");
-    if (action) {
-      action.selectedIndex = 1;
+  
+  const selectField = (selectedOptionIdx) => {
+    const field = document.querySelector("#fs-code-search__filter select");
+    if (field) {
+      field.selectedIndex = selectedOptionIdx;
     }
+  };
+
+  if (e.ctrlKey && e.keyCode == 65) {
+    selectField(1);
   }
   else if (e.ctrlKey && e.keyCode == 69) {
-    const action = document.getElementById("fs-filter-action");
-    if (action) {
-      action.selectedIndex = 0;
-    }
+    selectField(0);
   }
   else if (e.ctrlKey && e.keyCode == 70) {
-    const action = document.getElementById("fs-filter-action");
-    if (action) {
-      action.selectedIndex = 2;
-    }
+    selectField(2);
   }
   else if (e.ctrlKey && e.keyCode == 67) {
-    const action = document.getElementById("fs-filter-action");
-    if (action) {
-      action.selectedIndex = 3;
-    }
+    selectField(3);
   }
 });
 
