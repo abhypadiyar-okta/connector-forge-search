@@ -39,3 +39,23 @@
   color:#0AE; 
   cursor: pointer;
 }
+
+.fs-search-modal .fa-refresh--running {
+  animation: spinner .6s linear infinite;
+}
+
+@keyframes spinner {
+  to {
+    transform: rotate(360deg)
+  }
+}
+
+.fs-code-search__input i {
+  position: absolute;
+  transform: translate(-25px, 15px);
+}
+
+.fs-code-search__connector {
+  position: absolute;
+  right: 15px;
+}

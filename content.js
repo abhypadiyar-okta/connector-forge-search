@@ -1,212 +1,54 @@
-let connector = "";
+
+const FIELD_SECTION_INDEX_MAPPING = {
+  'connectors': '',
+  'events': 1,
+  'actions': 2,
+  'functions': 3
+}
+
+
+
+// ================================== CHROME EXTENSION DATA ===================================//
+let currentConnector = "";
+let connectors = [];
 
 //  possible results for each options
-let resultsDataStore = {};
+let datastore = {};
 
 // maintains last 10 searches.
-const recentSearches = [];
+const historyRecords = [];
 
-chrome.runtime.onMessage.addListener(function(message, callback) {
-  if (message.type == "getLocalStorageResult") {
-    const value = JSON.parse(message.value);
-    resultsDataStore[4] = value.connectors;
-  }
-});
-
-const showSearchModal = () => {
-  document.addEventListener('keydown', (evt) => {
-    const isEscape = (evt.key === "Escape" || evt.key === "Esc");
-    isEscape && removeForgeSearchModal();
-  });
-  
-  if (!isForgeSearchEnabled()) {
-    const codeSearchModal = createCodeSearchModal();
-    addForgeSearchModal(codeSearchModal);
-    registerCodeSearchModalListeners();
-  }
+//============================= UTILS =======================================//
+const getMatchingResults = (results, searchText) => {
+  const re = new RegExp(searchText, 'gi');
+  const matchingResults =  results.filter(result => !!result.match(re));
+  return matchingResults;
 };
 
-const createCodeSearchModal = () => {
-  removeForgeSearchModal();
-  const forgeSearchModal = createFogeSearchModal();
-  const searchModalContent = `
-    <div class="fs-code-search">
-      <div class="fs-code-search__header" >
-        <div>
-          <h3>Search</h3>
-        </div>
-        <div style="position: absolute; right: 15px;">
-          <h3> 
-            <i id="fs-connector-search" class="icon fa fa-refresh"></i>
-            <span>Connector: ${connector}</span>
-          </h3>
-        </div>
-      </div>
-      <br />
-      <div class='fs-code-search__filter' id="fs-filter" >
-        <select id="fs-filter-action">
-          <option value=1 selected>Events</option>
-          <option value=2>Actions</option>
-          <option value=3>Functions</option>
-          <option value=4>Connectors</option>
-        </select>
-        <input 
-          autofocus 
-          type="text" 
-          placeholder="Enter partial text, press enter to see matching results ..." 
-          id="fs-filter-input" 
-        />
-        <button id="fs-filter-recent">
-          <i class="icon fa fa-history"></i> 
-          Recent
-        </button>
-      </div>
-      <div>
-        <ul class="fs-code-search__list" id="fs-elems" />
-      </div>
-      <div>
-        <div>
-          <i class="info fa fa-info-circle"></i>
-          <span>Developer tips</span>
-        </div>
-        <div>
-          <span>Use Ctrl + e | a | f | c (Select Events | Actions | Functions | Connectors)</span>
-        </div>
-        <div>
-          <span>Press Escape to close the search</span>
-        </div>
-        <div>
-          <span>List of connectors synced everyday, click refresh icon near connector to force refresh</span>
-        </div>
-      </div>
-    </div>`;
-    forgeSearchModal.innerHTML = searchModalContent;
-  return forgeSearchModal;
+const getTimestamp = () => new Date().toISOString().slice(0,10);
+
+const addHistoryRecord = (record) => {
+  if (historyRecords.length >= 10) {
+    historyRecords.pop();
+  }
+  historyRecords.unshift(record);
 };
 
-const createFogeSearchModal = () => {
+const getSectionFromIndex = (index) => {
+  const entry = Object.entries().find(e => e.value == index);
+  return entry.key || "";
+}
+
+// ============================= MODAL COMMONS ============================= //
+const createModal = () => {
   const modal = document.createElement('section');
   modal.id="forge-search-modal";
   modal.className = "fs-search-modal";
   return modal;
 };
 
-const createConnectInfoProgressModal = () => {
-  removeForgeSearchModal();
-  const forgeSearchModal = createFogeSearchModal();
-  const loadMessageContent = `
-      <div>
-        <div style="text-align: center">
-          <i class="icon fa fa-spinner" style="font-size: 30px"></i>
-        </div>
-        <h4> Collecting connector info .... </h4>
-      </div>
-    `;
-  forgeSearchModal.innerHTML = loadMessageContent;
-  return forgeSearchModal;
-};
 
-const debounce = (f, wait) => {
-  let timeout;
-  return function executeFuncion(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      f(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-};
-
-// registering code search modal listeners
-const registerCodeSearchModalListeners = () => {
-  const action = document.getElementById("fs-filter-action");
-  action.addEventListener('change', e => {
-    document.getElementById("fs-filter-input").value = "";
-    document.getElementById("fs-elems").innerHTML = "";
-  });
-
-  //TODO: add handle change debounce
-  const input = document.getElementById("fs-filter-input");
-  input.addEventListener('keydown', e => {
-    if (e.keyCode == 13) {
-      const searchText = input.value;
-      const sectionIdx = document.getElementById("fs-filter-action").value;
-      const matchingResults = getCodeSearchModalMatchingResults(sectionIdx, searchText);
-      const infos = matchingResults.map(result => {
-        return {method: result, section: sectionIdx};
-      });
-      updateCodeSearchModalWithResults(infos, async (info) => {
-        saveRecentSearch(info);
-        await openSection(info.section);
-        await activateMethod(info.section, info.method);
-        removeForgeSearchModal();
-      });
-    }
-  });
-
-  // update results with recent searches.
-  const recent = document.getElementById("fs-filter-recent");
-  recent.addEventListener('click', async (e) => {
-    updateCodeSearchModalWithResults(recentSearches, async (info) => {
-      await openSection(info.section);
-      await activateMethod(info.section, info.method);
-      removeForgeSearchModal();
-    });
-  });
-
-  const connectorSearch = document.getElementById("fs-connector-search");
-  connectorSearch.addEventListener('click', async (e) => {
-    await openConnectorSearch();
-    const channelNameElems = document.querySelectorAll(".channel-list-item .channel-name");
-    const connectors = [];
-    channelNameElems.forEach((channelNameElem) => {
-      connectors.push(channelNameElem.innerHTML);
-    })
-    document.querySelector(".channel-list-item").click();
-    resultsDataStore[4] = connectors;
-    const value = JSON.stringify({"timestamp": getTimestamp(), "connectors": connectors});
-    window.localStorage.setItem("fs_connectors", value);
-  })
-};
-
-const getTimestamp = () => new Date().toISOString().slice(0,10);
-
-const saveRecentSearch = (info) => {
-  if (recentSearches.length >=10) {
-    recentSearches.pop();
-  }
-  recentSearches.unshift(info);
-};
-
-// create result elems in code search modal.
-const updateCodeSearchModalWithResults = (results, resultItemListener) => {
-  const resultElems = document.getElementById("fs-elems");
-  resultElems.innerHTML = "";
-
-  results.forEach(result => {
-    const liItem = document.createElement("li");
-    liItem.innerHTML= `<div>${result.method}</div>`;
-    liItem.setAttribute('data-section', result.section);
-    resultElems.appendChild(liItem);
-  });
-
-  const resultHtmlElems = document.querySelectorAll("#fs-elems li");
-  resultHtmlElems.forEach((elem) => elem.addEventListener("click", (e) => {
-    const target = e.target;
-    const info = {"section": parseInt(target.parentNode.getAttribute('data-section')), "method": target.innerHTML};
-    resultItemListener(info);
-  }));
-};
-
-const getCodeSearchModalMatchingResults = (sectionIdx, searchText) => {
-  let filteredResults = resultsDataStore[sectionIdx] || [];
-  const re = new RegExp(searchText, 'gi');
-  filteredResults =  filteredResults.filter(result => !!result.match(re));
-  return filteredResults;
-};
-
-const removeForgeSearchModal = () => {
+const hideModal = () => {
   const forgeSearchModal = document.getElementById('forge-search-modal');
   forgeSearchModal && forgeSearchModal.remove();
   const reactIdModal = document.getElementById('react');
@@ -215,62 +57,246 @@ const removeForgeSearchModal = () => {
   }
 };
 
-//activate method in section.
-const activateMethod = async (section , method) => {
-  let sections =  document.querySelectorAll(".left-nav .left-nav-category");
-  const selectedSection = sections[section];
-
-  const methods = selectedSection.parentNode.children[1].querySelectorAll(".method-name");
-  for(let methodIdx =0; methodIdx < methods.length; methodIdx++) {
-    if(methods[methodIdx].innerHTML == method) {
-      methods[methodIdx].click();
-      break;
-    }
-  }
-};
-
-const addForgeSearchModal = (contentNode) => {
+const showModal = (contentNode) => {
   const body = document.querySelector("body");
-  
   const pageSection = body.querySelector("#react");
   pageSection.style="opacity: 0.5;";
-
   body.appendChild(contentNode);  
 }
 
-const isForgeSearchEnabled = () => 
+const isModalEnabled = () => 
   !!document.getElementById('forge-search-modal');
 
 
-const collectConnectorInfo = async () => {
- let sections =  document.querySelectorAll(".left-nav .left-nav-category");
- if (sections && sections.length > 0) {
-  for (let sectionIdx = 1; sectionIdx < sections.length-2; sectionIdx++) {
-    await openSection(sectionIdx);
 
-    let sections =  document.querySelectorAll(".left-nav .left-nav-category");
-    const selectedSection = sections[sectionIdx];
-    if (!resultsDataStore[sectionIdx]) {
-      resultsDataStore[sectionIdx] = [];
-    }
-    const methods = getMethodsInSection(selectedSection);
-    resultsDataStore[sectionIdx] = methods;
+
+// ============================= SPOTLIGHT MODAL ============================= //
+const showSpotlightModal = () => {
+  document.addEventListener('keydown', (evt) => {
+    const isEscape = (evt.key === "Escape" || evt.key === "Esc");
+    isEscape && hideModal();
+  });
+  
+  if (!isModalEnabled()) {
+    const codeSearchModal = createCodeSearchModal();
+    addForgeSearchModal(codeSearchModal);
+    registerCodeSearchModalListeners();
+    loadConnectors();
   }
- }
 };
 
-const getMethodsInSection = (section) => {
-  const parent = section.parentNode;
-  const result = [];
-  if (parent) {
-    const sectionMethods =  parent.children[1].querySelectorAll(".method-name");
-    sectionMethods.forEach(sectionMethd => {
-      result.push(sectionMethd.innerHTML);
-    });
+const loadConnectors = () => {
+  const value = window.localStorage.getItem("fs_connectors");
+  const connectors = JSON.parse(value).connectors || [];
+  if (!!connectors) {
+    openConnectorSearch();
+    connectors = getConnectors();
   }
-  return result;
+};
+
+const createSpotlightModal = () => {
+  removeModal();
+  const modal = createModal();
+  const spotlightContent = `
+    <div class="fs-code-search">
+      <section class="fs-code-search__header" id="fs-code-search__header">
+        <div>
+          <h3>Forge Spotlight</h3>
+        </div>
+        <div class="fs-code-search__connector">
+          <h3> 
+            <i id="fs-connector-sync" class="icon fa fa-refresh"></i>
+            <span>Connector: [ ${connector} ]</span>
+          </h3>
+          <p></p>
+        </div>
+      </section>
+      <br />
+      <section class='fs-code-search__filter' id="fs-code-search__filter" >
+        <div>
+          <select>
+            <option value='events' selected>Events</option>
+            <option value='actions'>Actions</option>
+            <option value='events'>Functions</option>
+            <option value='connectors'>Connectors</option>
+          </select>
+        </div>
+        <div class="fs-code-search__field-input">
+          <input 
+            autofocus 
+            type="text" 
+            placeholder="Enter partial text, press enter to see matching results ..." 
+            id="fs-filter-input" 
+          />
+          <i class="icon fa fa-search"></i>
+        </div>
+        <div>
+          <button>
+            <i class="icon fa fa-history"></i> 
+            Recent
+          </button>
+        </div>
+      </section>
+      <section class="fs-code-search__list" id="fs-code-search__list">
+        <ul />
+      </section>
+      <section class="fs-code-search__help" id="fs-code-search__help">
+        <div>
+          <i class="info fa fa-info-circle"></i>
+          <span>Developer tips</span>
+        </div>
+        <div>
+          <span>Use Ctrl + e | a | f | c (Select Events | Actions | Functions | Connectors )</span>
+        </div>
+        <div>
+          <span>Press Escape to close the search</span>
+        </div>
+        <div>
+          <span>Click refresh icon near connector to force refresh list of connectors</span>
+        </div>
+      </section>
+    </div>`;
+    modal.innerHTML = spotlightContent;
+  return modal;
+};
+
+// registering spotlight search modal listeners
+const registerSpotlightModalListeners = () => {
+  // case: change search field, clear results and input field.
+  const field = document.querySelector("#fs-code-search__filter select");
+  field.addEventListener('change', e => {
+    document.querySelector("#fs-code-search__filter input").value = "";
+    document.querySelector("#fs-code-search__list ul").innerHTML = "";
+  });
+
+  // case: on enter in input field, update results, register listeners for results.
+  const fieldInput = document.querySelector("#fs-code-search__filter input");
+  fieldInput.addEventListener('keydown', e => {
+    if (e.keyCode == 13) {
+      const searchText = fieldInput.value;
+      const field = document.querySelector("#fs-code-search__filter select").value;
+
+      const results = datastore[field];
+      const matchingResults = getMatchingResults(results, searchText);
+
+      const ul = document.querySelector("#fs-code-search__list ul");
+      if (field === "connectors") {
+        matchingResults.forEach(matchingResult => {
+          const li = createSpotlightResultListItem(matchingResult, {connector: matchingResult});
+          ul.appendChild(li);
+        });
+
+        const lis = document.querySelectorAll("#fs-code-search__list ul li");
+        lis.forEach((li) => {
+          document.addEventListener('click', (e) => {
+            const connector = e.getAttribute('data-connector');
+            openConnectorSearch();
+            selectConnector(connector);
+          });
+        });
+      }
+
+      if (field === "actions" || field == "events" || field == "functions") {
+        matchingResults.forEach(matchingResult => {
+          const li = createSpotlightResultListItem(matchingResult, {connector: currentConnector, field, method: matchingResult});
+          ul.appendChild(li);
+        });
+
+        const lis = document.querySelectorAll("#fs-code-search__list ul li");
+        lis.forEach((li) => {
+          document.addEventListener('click', (e) => {
+            const connector = e.getAttribute("data-connector");
+            const method = e.getAttribute("data-method");
+            const field = e.getAttribute("data-field");
+
+            openSection(FIELD_SECTION_INDEX_MAPPING[field]);
+            selectMethod(FIELD_SECTION_INDEX_MAPPING[field], method);
+          });
+        });
+      }
+    }
+  });
+
+  // case: handle recent button click.
+  const recentButton = document.querySelector("#fs-code-search__filter button");
+  recentButton.addEventListener('click', async (e) => {
+    const ul = document.querySelector("#fs-code-search__list ul");
+
+    historyRecords.forEach(historyRecord => {
+      const li = createSpotlightResultListItem(matchingResult, {connector: historyRecord.connnector, field: historyRecord.field, method: historyRecord.method});
+      ul.appendChild(li);
+    });
+
+    const lis = document.querySelectorAll("#fs-code-search__list ul li");
+    lis.forEach((li) => {
+      document.addEventListener('click', (e) => {
+        const connector = e.getAttribute('data-connector');
+        const method = e.getAttribute("data-method");
+        const field = e.getAttribute("data-field");
+
+        openConnectorSearch();
+        selectConnector(connector);
+        openSection(FIELD_SECTION_INDEX_MAPPING[field]);
+        selectMethod(FIELD_SECTION_INDEX_MAPPING[field], method);
+      });
+    });
+  });
+
+  const connectorSyncIcon = document.getElementById("fs-connector-sync");
+  connectorSyncIcon.addEventListener('click', async (e) => {
+    try {
+      connectorSyncIcon.classList.add("fa-refresh--running");
+
+      await openConnectorSearch();
+      const connectors = await getConnectors();
+
+      // done to close the filter section.
+      document.querySelector(".channel-list-item").click();
+
+      datastore['connectors'] = connectors;
+
+      // save to local storage.
+      const value = JSON.stringify({"timestamp": getTimestamp(), "connectors": connectors});
+      window.localStorage.setItem("fs_connectors", value);
+    } finally {
+      connectorSyncIcon.classList.remove("fa-refresh--running");
+    }
+  })
+};
+
+
+const createSpotlightResultListItem = (value, attrs) => {
+  const li = document.createElement('li');
+  li.innerHTML = label;
+
+  const ul = document.querySelector("#fs-code-search__list ul");
+  attrs.forEach((attr) => {
+    const attributeName = `$data-${attr.key}`;
+    li.setAttribute(attributeName, attr.value);
+  });
 }
 
+
+
+// ============================= INFO MESSSAGE MODAL ============================= //
+const createConnectorInfoModal = () => {
+  hideModal();
+  const modal = createModal();
+  const loadMessageContent = `
+      <div>
+        <div style="text-align: center">
+          <i class="icon fa fa-spinner" style="font-size: 30px"></i>
+        </div>
+        <h4> Collecting connector info .... </h4>
+      </div>
+    `;
+  modal.innerHTML = loadMessageContent;
+  return modal;
+};
+
+
+
+//========================== NAV HELPERS ==========================================//
 const openSection = async (sectionIdx) => {
   return new Promise((resolve, reject) => {
     let sections =  document.querySelectorAll(".left-nav .left-nav-category");
@@ -286,7 +312,7 @@ const openSection = async (sectionIdx) => {
       } else {
         selectedSection.click();
       }
-    },1000);
+    },200);
   });
 };
 
@@ -305,11 +331,76 @@ const openConnectorSearch = async () => {
       } else {
         selectorBtn.click();
       }
-    },1000);
+    },200);
   });
 };
 
-// entry point
+const selectMethod = async (section , method) => {
+  let sections =  document.querySelectorAll(".left-nav .left-nav-category");
+  const selectedSection = sections[section];
+
+  const methods = selectedSection.parentNode.children[1].querySelectorAll(".method-name");
+  for(let methodIdx =0; methodIdx < methods.length; methodIdx++) {
+    if(methods[methodIdx].innerHTML == method) {
+      methods[methodIdx].click();
+      break;
+    }
+  }
+};
+
+const getConnectors = async (connector) => {
+  return new Promise((resolve, reject) => {
+    const channelNameElems = document.querySelectorAll(".channel-list-item .channel-name");
+    const connectors = [];
+    channelNameElems.forEach((channelNameElem) => {
+      connectors.push(channelNameElem.innerHTML);
+    });
+    resolve(connectors);
+  });
+};
+
+const recordConnectorInfo = async () => {
+  let sections =  document.querySelectorAll(".left-nav .left-nav-category");
+  if (sections && sections.length > 0) {
+   for (let sectionIdx = 1; sectionIdx < sections.length-2; sectionIdx++) {
+     await openSection(sectionIdx);
+ 
+     const section  = getSectionFromIndex(sectionIdx);
+     if (!datastore[section]) {
+       datastore[section] = [];
+     }
+     const methods = getMethodsInSection(selectedSection);
+     datastore[section] = methods;
+   }
+  }
+ };
+ 
+ const getMethodsInSection = (section) => {
+   const parent = section.parentNode;
+   const result = [];
+   if (parent) {
+     const sectionMethods =  parent.children[1].querySelectorAll(".method-name");
+     sectionMethods.forEach(sectionMethd => {
+       result.push(sectionMethd.innerHTML);
+     });
+   }
+   return result;
+ }
+ 
+ const selectConnector = (connector) => {
+   const channelNames = document.querySelectorAll(".channel-list-item .channel-name");
+   for( let channelNameIdx = 0; channelNameIdx < channelNames.length; channelNameIdx++) {
+     if (channelNames.item(channelNameIdx).innerHTML === connector) {
+       channelNames.item(channelNameIdx).click();
+       break;
+     }
+   }
+ };
+
+
+
+
+//============================ EXTENSION ENTRY POINT =====================================//
 const channelDropdown =  document.querySelectorAll(".channel-dropdown")[0];
 if (channelDropdown) {
   channelDropdown.addEventListener('click', async (e) => {
@@ -323,11 +414,13 @@ if (channelDropdown) {
     channelListItems = document.querySelectorAll(".channel-list-item");
     if (channelListItems && channelListItems.length > 0 && !e.target.innerHTML.includes("New Connector")) {
       setTimeout(async () => {
-        const progressModal = createConnectInfoProgressModal();
+        const progressModal = createP();
         addForgeSearchModal(progressModal);
-        await collectConnectorInfo();
+
+        await recordConnectorInfo();
+        
         connector = document.querySelector(".channel-selector-button h2").innerHTML;
-        removeForgeSearchModal();
+        hideModal();
       }, 0);
     }
   })
@@ -364,3 +457,5 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+
