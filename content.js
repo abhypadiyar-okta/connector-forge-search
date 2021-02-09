@@ -81,6 +81,7 @@ const showSpotlightModal = () => {
     showModal(codeSearchModal);
     registerSpotlightModalListeners();
     loadConnectors();
+    document.querySelector("#fs-code-search__filter input").focus();
   }
 };
 
@@ -202,15 +203,15 @@ const registerSpotlightModalListeners = () => {
         spotlightResultInfoMessage("Can't find a match meeting your request");
       }
 
-      const ul = document.querySelector("#fs-code-search__list ul");
       if (field === "connectors") {
+        document.querySelector("#fs-code-search__list ul").innerHTML = "";
+        const ul = document.querySelector("#fs-code-search__list ul");
         matchingResults.forEach(matchingResult => {
           const li = createSpotlightResultListItem(matchingResult, {connector: matchingResult});
           ul.appendChild(li);
         });
 
         const lis = document.querySelectorAll("#fs-code-search__list ul li");
-        document.querySelectorAll("#fs-code-search__list ul").innerHTML = "";
         lis.forEach((li) => {
           li.addEventListener('click', async (e) => {
             const connector = e.target.getAttribute('data-connector');
@@ -222,13 +223,14 @@ const registerSpotlightModalListeners = () => {
       }
 
       if (field === "actions" || field == "events" || field == "functions") {
+        document.querySelector("#fs-code-search__list ul").innerHTML = "";
+        const ul = document.querySelector("#fs-code-search__list ul");
         matchingResults.forEach(matchingResult => {
           const li = createSpotlightResultListItem(matchingResult, {connector: currentConnector, field, method: matchingResult});
           ul.appendChild(li);
         });
 
         const lis = document.querySelectorAll("#fs-code-search__list ul li");
-        document.querySelectorAll("#fs-code-search__list ul").innerHTML = "";
         lis.forEach((li) => {
           li.addEventListener('click', async (e) => {
             const connector = e.target.getAttribute("data-connector");
@@ -250,8 +252,14 @@ const registerSpotlightModalListeners = () => {
   // case: handle recent button click.
   const recentButton = document.querySelector("#fs-code-search__filter button");
   recentButton.addEventListener('click', async (e) => {
+    document.querySelector("#fs-code-search__list ul").innerHTML = "";
     const ul = document.querySelector("#fs-code-search__list ul");
-    document.querySelectorAll("#fs-code-search__list ul").innerHTML = "";
+
+    if (historyRecords.length === 0) {
+      spotlightResultInfoMessage("Can't find any recent searches for events, actions, fucntions");
+      return;
+    }
+
     historyRecords.forEach(historyRecord => {
       const li = createSpotlightResultListItem(`[${historyRecord.connector}] ${historyRecord.method}`, {connector: historyRecord.connector, field: historyRecord.field, method: historyRecord.method});
       ul.appendChild(li);
@@ -318,7 +326,7 @@ const createConnectorInfoModal = () => {
         <div style="text-align: center">
           <i class="icon fa fa-spinner" style="font-size: 30px"></i>
         </div>
-        <h4> Collecting connector info .... </h4>
+        <h4> Collecting connector info for spotlight.... </h4>
       </div>
     `;
   modal.innerHTML = loadMessageContent;

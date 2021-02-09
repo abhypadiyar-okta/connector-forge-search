@@ -58,7 +58,7 @@
 
 .fs-code-search__field-input i {
   position: absolute;
-  transform: translate(-25px, 15px);
+  transform: translate(-25px, 20px);
 }
 
 .fs-code-search__connector {
@@ -77,4 +77,8 @@
 
 .fs-code-search__help {
   margin-top: 25px;
+}
+
+#fs-connector-sync {
+  color: #0AE;
 }
