@@ -338,6 +338,7 @@ const openSection = async (sectionIdx) => {
     let sections =  document.querySelectorAll(".left-nav .left-nav-category");
     const selectedSection = sections[sectionIdx];
     let openSectionInterval = setInterval(() => {
+      // section is opened when plus icon appears on right side of section.
       const hasSectionOpened =  selectedSection.querySelectorAll(".fa-plus-circle") && 
                                 selectedSection.querySelectorAll(".fa-plus-circle").length > 0;
       if (hasSectionOpened) {
@@ -356,6 +357,7 @@ const openConnectorSearch = async () => {
   return new Promise((resolve, reject) => {
     let selectorBtn =  document.querySelector(".channel-selector-button");
     let openSearchBtnInterval = setInterval(() => {
+      // connector search is opened, when there are some channels listed.
       const isChannelListLoaded = document.querySelectorAll(".channel-list-item") && 
                                   document.querySelectorAll(".channel-list-item").length > 0;
       if (isChannelListLoaded) {
@@ -433,6 +435,8 @@ const recordConnectorInfo = async () => {
       }
     }
 
+    // when connector is selected, 
+    // default click handler of extn is triggered it opens a loading modal, it's closure means connector is selected.
     let waitForModalClosedInterval = null;
     let isModalClosed = () => {
       const modalEnabled = isModalEnabled();
