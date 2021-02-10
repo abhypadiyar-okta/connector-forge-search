@@ -123,7 +123,7 @@ const createSpotlightModal = () => {
         <div class="fs-code-search__connector">
           <h3> 
             <i id="fs-connector-sync" class="icon fa fa-refresh"></i>
-            <span>Connector: [ ${currentConnector} ]</span>
+            <span>Connector: [ ${currentConnector || "-"} ]</span>
           </h3>
           <span id="fs-connector-sync__message"></p>
         </div>
@@ -132,10 +132,10 @@ const createSpotlightModal = () => {
       <section class='fs-code-search__filter' id="fs-code-search__filter" >
         <div>
           <select>
+            <option value='connectors'>Connectors</option>
             <option value='events'>Events</option>
             <option value='actions'>Actions</option>
             <option value='functions'>Functions</option>
-            <option value='connectors'>Connectors</option>
           </select>
         </div>
         <div class="fs-code-search__field-input">
@@ -192,15 +192,16 @@ const registerSpotlightModalListeners = () => {
     if (e.keyCode == 13) {
       const field = document.querySelector("#fs-code-search__filter select").value;
       if (currentConnector.length == 0 && field !== "connectors") {
-        spotlightResultInfoMessage("Please select a connector by Ctrl+c to set connector option, enter a value in input box & press enter to see results");
+        spotlightResultInfoMessage("Please select a connector by Ctrl+c to set connector option, enter a value in input box and press enter to see results");
         return;
       }
       const searchText = fieldInput.value;
-      const results = datastore[field];
+      const results = datastore[field] || [];
       const matchingResults = getMatchingResults(results, searchText);
 
       if (!matchingResults || matchingResults.length === 0) {
-        spotlightResultInfoMessage("Can't find a match meeting your request");
+        spotlightResultInfoMessage("No matching results found meeting your request");
+        return;
       }
 
       if (field === "connectors") {
@@ -256,7 +257,7 @@ const registerSpotlightModalListeners = () => {
     const ul = document.querySelector("#fs-code-search__list ul");
 
     if (historyRecords.length === 0) {
-      spotlightResultInfoMessage("Can't find any recent searches for events, actions, fucntions");
+      spotlightResultInfoMessage("Cannot find recent searches for events, actions, fucntions");
       return;
     }
 
@@ -493,7 +494,8 @@ if (channelDropdown) {
 
 // show the search modal
 document.addEventListener('keydown', (e) => {
-  if (e.metaKey) {
+  // ctrl + 1,
+  if (e.ctrlKey && e.keyCode== 49) {
     showSpotlightModal();
   }
   
@@ -504,17 +506,22 @@ document.addEventListener('keydown', (e) => {
     }
   };
 
+  // ctrl + a, set action
   if (e.ctrlKey && e.keyCode == 65) {
-    selectField(1);
-  }
-  else if (e.ctrlKey && e.keyCode == 69) {
-    selectField(0);
-  }
-  else if (e.ctrlKey && e.keyCode == 70) {
     selectField(2);
   }
-  else if (e.ctrlKey && e.keyCode == 67) {
+
+  // ctrl + e, set events
+  else if (e.ctrlKey && e.keyCode == 69) {
+    selectField(1);
+  }
+  // ctrl + f, set functions
+  else if (e.ctrlKey && e.keyCode == 70) {
     selectField(3);
+  }
+  // ctrl + c, set connectors
+  else if (e.ctrlKey && e.keyCode == 67) {
+    selectField(0);
   }
 });
 
