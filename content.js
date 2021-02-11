@@ -61,7 +61,10 @@ const getEditorValue = () => {
 }
 
 const editorContainsText = (text) => {
-  return document.querySelector("#brace-editor").innerHTML.includes(text);
+  const stringValues = [];
+  document.querySelectorAll("#brace-editor .ace_string").forEach(e => stringValues.push(e.innerHTML));
+  console.log(stringValues);
+  return stringValues.includes(`\"${text}\"`);
 }
 
 // ============================= MODAL COMMONS ============================= //
@@ -119,7 +122,7 @@ const createReferenceModalNode = () => {
             type="text" 
             placeholder="Enter name of function" 
             id="fs-filter-input" 
-            style="width:98%"
+            style="width:98%; min-width: 500px"
           />
           <i class="icon fa fa-search"></i>
         </div>
@@ -158,26 +161,29 @@ const showReferenceModal = () => {
 const registerReferenceListeners = async () => {
   const fieldInput = document.querySelector("#fs-code-search__filter input");
   fieldInput.addEventListener('keydown', async e => {
-    const funcName = document.querySelector("#fs-code-search__filter input").value;
+    if (e.keyCode == 13) {
+      const funcName = document.querySelector("#fs-code-search__filter input").value;
 
-    if (!currentConnector) {
-      spotlightResultInfoMessage("It works when you in context of conenctor, please Ctrl+1 to select connector", "error");
-      return;
+      if (!currentConnector) {
+        modalInfoMessage("It works when you in context of conenctor, please Esc & Ctrl+1 to select connector", "error");
+        return;
+      }
+
+      modalInfoMessage("Finding references ....", "info");
+      const references = await getReferences(funcName);
+      console.log(references);
+
+      // if (!references || references.length  == 0) {
+      //   modalInfoMessage("No matching results found meeting your request", "error");
+      //   return;
+      // }
+
+      // const ul = document.querySelector("#fs-code-search__filter ul");
+      // references.forEach(reference => {
+      //   const li = createSpotlightResultListItem(reference, {connector: currentConnector, method: reference.method, field: reference.field});
+      //   ul.appendChild(li);
+      // });
     }
-
-    spotlightResultInfoMessage("Finding references ....", "info");
-    const references = await getReferences(funcName);
-
-    if (!references || references.length  == 0) {
-      spotlightResultInfoMessage("No matching results found meeting your request", "error");
-      return;
-    }
-
-    const ul = document.querySelector("#fs-code-search__filter ul");
-    references.forEach(reference => {
-      const li = createSpotlightResultListItem(reference, {connector: currentConnector, method: reference.method, field: reference.field});
-      ul.appendChild(li);
-    });
   });  
 };
 
@@ -186,12 +192,16 @@ const getReferences = async (searchText) => {
   // case : search events, actions, functions
   const result = [];
   for(let sectionIdx = 1; sectionIdx < 4; sectionIdx++) {
-    await openSection(getSectionNameFromIndex(sectionIdx));
-    const methods = getMethodsInSection(getSectionNameFromIndex(sectionIdx));
+    const section = getSectionNameFromIndex(sectionIdx);
+    await openSection(section);
+    const methods = getMethodsInSection(section);
     for (let methodIdx = 0; methodIdx < methods.length; methodIdx++) {
-      await openMethod(FIELD_SECTION_INDEX_MAPPING[sectionIdx], method);
+      const method = methods[methodIdx];
+      console.log("==== method === " + method);
+      await openMethod(section, method);
       if (editorContainsText(searchText)) {
-        result.push({method: method, section: getSectionNameFromIndex(sectionIdx)})
+        console.log("HAS METHOD ====!!!!");
+        result.push({method: method, section})
       }
     }
   }
@@ -327,7 +337,7 @@ const registerSpotlightModalListeners = () => {
     if (e.keyCode == 13) {
       const field = document.querySelector("#fs-code-search__filter select").value;
       if (currentConnector.length == 0 && field !== "connectors") {
-        spotlightResultInfoMessage("Please select a connector by Ctrl+c to set connector option, enter a value in input box and press enter to see results", "error");
+        modalInfoMessage("Please select a connector by Ctrl+c to set connector option, enter a value in input box and press enter to see results", "error");
         return;
       }
       const searchText = fieldInput.value;
@@ -335,7 +345,7 @@ const registerSpotlightModalListeners = () => {
       const matchingResults = getMatchingResults(results, searchText);
 
       if (!matchingResults || matchingResults.length === 0) {
-        spotlightResultInfoMessage("No matching results found meeting your request", "error");
+        modalInfoMessage("No matching results found meeting your request", "error");
         return;
       }
 
@@ -375,8 +385,8 @@ const registerSpotlightModalListeners = () => {
 
             addHistoryRecord({connector, field, method});
 
-            await openSection(FIELD_SECTION_INDEX_MAPPING[field]);
-            await openMethod(FIELD_SECTION_INDEX_MAPPING[field], method);
+            await openSection(field);
+            await openMethod(field, method);
 
             hideModal();
           });
@@ -392,7 +402,7 @@ const registerSpotlightModalListeners = () => {
     const ul = document.querySelector("#fs-code-search__list ul");
 
     if (historyRecords.length === 0) {
-      spotlightResultInfoMessage("Cannot find recent searches for events, actions, fucntions", "error");
+      modalInfoMessage("Cannot find recent searches for events, actions, fucntions", "error");
       return;
     }
 
@@ -411,8 +421,8 @@ const registerSpotlightModalListeners = () => {
 
         await openConnectorSearch();
         await openConnector(connector);
-        await openSection(FIELD_SECTION_INDEX_MAPPING[field]);
-        await openMethod(FIELD_SECTION_INDEX_MAPPING[field], method);
+        await openSection(field);
+        await openMethod(field, method);
       });
     });
   });
@@ -469,17 +479,17 @@ const createConnectorInfoModal = () => {
   return modal;
 };
 
-const spotlightResultInfoMessage = (message, type) => {
+const modalInfoMessage = (message, type) => {
   const ul = document.querySelector("#fs-code-search__list ul");
   ul.innerHTML = "";
 
   if (type == "error") {
-    ul.innerHTML = `<li style="color: red; font-size-bold; text-align-center;">${message}</li>`;
+    ul.innerHTML = `<li style="color: red; font-size:bold; text-align:center">${message}</li>`;
   }
   else if (type === "info") {
-    ul.innerHTML = `<li style="color: #388e3c; font-size-bold; text-align-center;">${message}</li>`;
+    ul.innerHTML = `<li style="color: #388e3c; font-size:bold; text-align:center;">${message}</li>`;
   } else {
-    ul.innerHTML = `<li style="font-size-bold; text-align-center;">${message}</li>`;
+    ul.innerHTML = `<li style="font-size:bold; text-align:center;">${message}</li>`;
   }
 }
 
@@ -539,7 +549,7 @@ const openConnectorSearch = async () => {
 const openMethod = async (section , method) => {
   return new Promise((resolve, reject) => {
     let sections =  document.querySelectorAll(".left-nav .left-nav-category");
-    const selectedSection = sections[FIELD_SECTION_INDEX_MAPPING[section]];
+    const selectedSection = sections.item([FIELD_SECTION_INDEX_MAPPING[section]]);
 
     const methods = selectedSection.parentNode.children[1].querySelectorAll(".method-name");
     for(let methodIdx =0; methodIdx < methods.length; methodIdx++) {
@@ -550,17 +560,28 @@ const openMethod = async (section , method) => {
     }
 
     // checks if editor section is loaded & has name of method.
+    let count = 5;
     let codeLoadedInterval = null;
     const isCodeLoaded = () => {
+      if (count <=0) {
+        console.log("=== reached count exit ===");
+        clearTimeout(codeLoadedInterval);
+        codeLoadedInterval = undefined;
+        resolve();
+        return;
+      }
       if (editorContainsText(method)) {
-        clearInterval(codeLoadedInterval);
+        console.log("=== reached clean resolve ===");
+        clearTimeout(codeLoadedInterval);
         codeLoadedInterval = undefined;
         resolve();
       } else {
-        setInterval(isCodeLoaded, 200);
+        console.log("=== reached wait ===");
+        count--;
+        codeLoadedInterval = setTimeout(isCodeLoaded, 200);
       }
     };
-    codeLoadedInterval = setInterval(isCodeLoaded, 200);
+    codeLoadedInterval = setTimeout(isCodeLoaded, 200);
   });
 };
 
@@ -588,10 +609,9 @@ const recordConnectorInfo = async () => {
   let sections =  document.querySelectorAll(".left-nav .left-nav-category");
   if (sections && sections.length > 0) {
    for (let sectionIdx = 1; sectionIdx < sections.length-2; sectionIdx++) {
-     await openSection(sectionIdx);
- 
-     const section  = getSectionNameFromIndex(sectionIdx);
-     const methods = getMethodsInSection(getSectionNameFromIndex(sectionIdx));
+    const section  = getSectionNameFromIndex(sectionIdx);
+     await openSection(section);
+     const methods = getMethodsInSection(section);
      datastore[section] = methods;
    }
   }
