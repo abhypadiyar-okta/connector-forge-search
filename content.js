@@ -6,8 +6,6 @@ const FIELD_SECTION_INDEX_MAPPING = {
   'functions': 3
 }
 
-
-
 // ================================== CHROME EXTENSION DATA ===================================//
 let currentConnector = "";
 
@@ -16,6 +14,9 @@ let datastore = {};
 
 // maintains last 10 searches.
 const historyRecords = [];
+
+// number of recent searches saved.
+const N_SEARCHES_SAVED = 10;
 
 //============================= UTILS =======================================//
 const getMatchingResults = (results, searchText) => {
@@ -26,20 +27,45 @@ const getMatchingResults = (results, searchText) => {
 
 const getTimestamp = () => new Date().toISOString().slice(0,10);
 
+/**
+ * Local history of searches upto 
+ * @param {*} record 
+ */
 const addHistoryRecord = (record) => {
-  if (historyRecords.length >= 10) {
+  if (historyRecords.length >= N_SEARCHES_SAVED) {
     historyRecords.pop();
   }
   historyRecords.unshift(record);
 };
 
-const getSectionFromIndex = (index) => {
+/**
+ * Basics _.invert of  FIELD_SECTION_INDEX_MAPPING.
+ * @param {} index 
+ */
+const getSectionNameFromIndex = (index) => {
   const entry = Object.entries(FIELD_SECTION_INDEX_MAPPING).find(e => e[1] == index);
   return entry[0] || "";
 }
 
+//TODO: find way to access ace
+const getEditorValue = () => {
+  if (!window.ace) {
+    return "";
+  }
+  const editor = window.ace.edit("brace-editor");
+  if (!editor) {
+    return "";
+  }
+  const code = window.ace.edit("brace-editor").getValue();
+  return code;
+}
+
+const editorContainsText = (text) => {
+  return document.querySelector("#brace-editor").innerHTML.includes(text);
+}
+
 // ============================= MODAL COMMONS ============================= //
-const createModal = () => {
+const createModalNode = () => {
   const modal = document.createElement('section');
   modal.id="forge-search-modal";
   modal.className = "fs-search-modal";
@@ -67,7 +93,110 @@ const isModalEnabled = () =>
   !!document.getElementById('forge-search-modal');
 
 
+// ============================= REFERENCE MODAL ============================= //
+const createReferenceModalNode = () => {
+  hideModal();
+  const modal = createModalNode();
+  const referenceContent = `
+    <div class="fs-code-search" id="fs-reference">
+      <section class="fs-code-search__header" id="fs-code-search__header">
+        <div>
+          <h3>Forge Spotlight</h3>
+        </div>
+        <div class="fs-code-search__connector">
+          <h3> 
+            <i id="fs-connector-sync" class="icon fa fa-refresh"></i>
+            <span>Connector: [ ${currentConnector || "-"} ]</span>
+          </h3>
+          <span id="fs-connector-sync__message"></p>
+        </div>
+      </section>
+      <br />
+      <section class='fs-code-search__filter' id="fs-code-search__filter" >
+        <div class="fs-code-search__field-input">
+          <input 
+            autofocus 
+            type="text" 
+            placeholder="Enter name of function" 
+            id="fs-filter-input" 
+            style="width:98%"
+          />
+          <i class="icon fa fa-search"></i>
+        </div>
+      </section>
+      <section class="fs-code-search__list" id="fs-code-search__list">
+        <ul />
+      </section>
+      <section class="fs-code-search__help" id="fs-code-search__help">
+        <div>
+          <i class="info fa fa-info-circle"></i>
+          <span>Keyboard shortcuts</span>
+        </div>
+        <div>
+          <span>Press escape to close  spotlight</span>
+        </div>
+      </section>
+    </div>`;
+    modal.innerHTML = referenceContent;
+  return modal;
+};
 
+const showReferenceModal = () => {
+  document.addEventListener('keydown', (evt) => {
+    const isEscape = (evt.key === "Escape" || evt.key === "Esc");
+    isEscape && hideModal();
+  });
+  
+  if (!isModalEnabled()) {
+    const referenceModal = createReferenceModalNode();
+    showModal(referenceModal);
+    registerReferenceListeners();
+    document.querySelector("#fs-code-search__filter input").focus();
+  }
+};
+
+const registerReferenceListeners = async () => {
+  const fieldInput = document.querySelector("#fs-code-search__filter input");
+  fieldInput.addEventListener('keydown', async e => {
+    const funcName = document.querySelector("#fs-code-search__filter input").value;
+
+    if (!currentConnector) {
+      spotlightResultInfoMessage("It works when you in context of conenctor, please Ctrl+1 to select connector", "error");
+      return;
+    }
+
+    spotlightResultInfoMessage("Finding references ....", "info");
+    const references = await getReferences(funcName);
+
+    if (!references || references.length  == 0) {
+      spotlightResultInfoMessage("No matching results found meeting your request", "error");
+      return;
+    }
+
+    const ul = document.querySelector("#fs-code-search__filter ul");
+    references.forEach(reference => {
+      const li = createSpotlightResultListItem(reference, {connector: currentConnector, method: reference.method, field: reference.field});
+      ul.appendChild(li);
+    });
+  });  
+};
+
+
+const getReferences = async (searchText) => {
+  // case : search events, actions, functions
+  const result = [];
+  for(let sectionIdx = 1; sectionIdx < 4; sectionIdx++) {
+    await openSection(getSectionNameFromIndex(sectionIdx));
+    const methods = getMethodsInSection(getSectionNameFromIndex(sectionIdx));
+    for (let methodIdx = 0; methodIdx < methods.length; methodIdx++) {
+      await openMethod(FIELD_SECTION_INDEX_MAPPING[sectionIdx], method);
+      if (editorContainsText(searchText)) {
+        result.push({method: method, section: getSectionNameFromIndex(sectionIdx)})
+      }
+    }
+  }
+  return result;
+};
 
 // ============================= SPOTLIGHT MODAL ============================= //
 const showSpotlightModal = () => {
@@ -77,7 +206,7 @@ const showSpotlightModal = () => {
   });
   
   if (!isModalEnabled()) {
-    const codeSearchModal = createSpotlightModal();
+    const codeSearchModal = createSpotlightModalNode();
     showModal(codeSearchModal);
     registerSpotlightModalListeners();
     loadConnectors();
@@ -85,6 +214,12 @@ const showSpotlightModal = () => {
   }
 };
 
+/**
+ * Loads connector names.
+ * Checks local storage if has them.
+ * When not found, opens the filter in left nav and iterates through list 
+ * and saves them in local storage and datastore.
+ */
 const loadConnectors = async () => {
   const value = window.localStorage.getItem("fs_connectors");
   let connectors = [];
@@ -111,9 +246,9 @@ const loadConnectors = async () => {
   }
 };
 
-const createSpotlightModal = () => {
+const createSpotlightModalNode = () => {
   hideModal();
-  const modal = createModal();
+  const modal = createModalNode();
   const spotlightContent = `
     <div class="fs-code-search">
       <section class="fs-code-search__header" id="fs-code-search__header">
@@ -192,7 +327,7 @@ const registerSpotlightModalListeners = () => {
     if (e.keyCode == 13) {
       const field = document.querySelector("#fs-code-search__filter select").value;
       if (currentConnector.length == 0 && field !== "connectors") {
-        spotlightResultInfoMessage("Please select a connector by Ctrl+c to set connector option, enter a value in input box and press enter to see results");
+        spotlightResultInfoMessage("Please select a connector by Ctrl+c to set connector option, enter a value in input box and press enter to see results", "error");
         return;
       }
       const searchText = fieldInput.value;
@@ -200,7 +335,7 @@ const registerSpotlightModalListeners = () => {
       const matchingResults = getMatchingResults(results, searchText);
 
       if (!matchingResults || matchingResults.length === 0) {
-        spotlightResultInfoMessage("No matching results found meeting your request");
+        spotlightResultInfoMessage("No matching results found meeting your request", "error");
         return;
       }
 
@@ -217,7 +352,7 @@ const registerSpotlightModalListeners = () => {
           li.addEventListener('click', async (e) => {
             const connector = e.target.getAttribute('data-connector');
             await openConnectorSearch();
-            await selectConnector(connector);
+            await openConnector(connector);
             currentConnector = connector;
           });
         });
@@ -241,7 +376,7 @@ const registerSpotlightModalListeners = () => {
             addHistoryRecord({connector, field, method});
 
             await openSection(FIELD_SECTION_INDEX_MAPPING[field]);
-            selectMethod(FIELD_SECTION_INDEX_MAPPING[field], method);
+            await openMethod(FIELD_SECTION_INDEX_MAPPING[field], method);
 
             hideModal();
           });
@@ -257,7 +392,7 @@ const registerSpotlightModalListeners = () => {
     const ul = document.querySelector("#fs-code-search__list ul");
 
     if (historyRecords.length === 0) {
-      spotlightResultInfoMessage("Cannot find recent searches for events, actions, fucntions");
+      spotlightResultInfoMessage("Cannot find recent searches for events, actions, fucntions", "error");
       return;
     }
 
@@ -275,9 +410,9 @@ const registerSpotlightModalListeners = () => {
         const field = e.target.getAttribute("data-field");
 
         await openConnectorSearch();
-        await selectConnector(connector);
+        await openConnector(connector);
         await openSection(FIELD_SECTION_INDEX_MAPPING[field]);
-        selectMethod(FIELD_SECTION_INDEX_MAPPING[field], method);
+        await openMethod(FIELD_SECTION_INDEX_MAPPING[field], method);
       });
     });
   });
@@ -321,7 +456,7 @@ const createSpotlightResultListItem = (value, attrs) => {
 // ============================= INFO MESSSAGE MODAL ============================= //
 const createConnectorInfoModal = () => {
   hideModal();
-  const modal = createModal();
+  const modal = createModalNode();
   const loadMessageContent = `
       <div>
         <div style="text-align: center">
@@ -334,18 +469,32 @@ const createConnectorInfoModal = () => {
   return modal;
 };
 
-const spotlightResultInfoMessage = (message) => {
+const spotlightResultInfoMessage = (message, type) => {
   const ul = document.querySelector("#fs-code-search__list ul");
   ul.innerHTML = "";
-  ul.innerHTML = `<li style="color: red; font-size-bold; text-align-center;">${message}</li>`;
+
+  if (type == "error") {
+    ul.innerHTML = `<li style="color: red; font-size-bold; text-align-center;">${message}</li>`;
+  }
+  else if (type === "info") {
+    ul.innerHTML = `<li style="color: #388e3c; font-size-bold; text-align-center;">${message}</li>`;
+  } else {
+    ul.innerHTML = `<li style="font-size-bold; text-align-center;">${message}</li>`;
+  }
 }
 
 
+
+
 //========================== NAV HELPERS ==========================================//
-const openSection = async (sectionIdx) => {
+/**
+ * Opens a section
+ * @param {*} section (events | functions | actions) 
+ */
+const openSection = async (section) => {
   return new Promise((resolve, reject) => {
     let sections =  document.querySelectorAll(".left-nav .left-nav-category");
-    const selectedSection = sections[sectionIdx];
+    const selectedSection = sections[FIELD_SECTION_INDEX_MAPPING[section]];
     let openSectionInterval = setInterval(() => {
       // section is opened when plus icon appears on right side of section.
       const hasSectionOpened =  selectedSection.querySelectorAll(".fa-plus-circle") && 
@@ -382,19 +531,43 @@ const openConnectorSearch = async () => {
   });
 };
 
-const selectMethod = async (section , method) => {
-  let sections =  document.querySelectorAll(".left-nav .left-nav-category");
-  const selectedSection = sections[section];
+/**
+ * opens a section & loads a method.
+ * @param {*} section  (events| actions| function)
+ * @param {*} method 
+ */
+const openMethod = async (section , method) => {
+  return new Promise((resolve, reject) => {
+    let sections =  document.querySelectorAll(".left-nav .left-nav-category");
+    const selectedSection = sections[FIELD_SECTION_INDEX_MAPPING[section]];
 
-  const methods = selectedSection.parentNode.children[1].querySelectorAll(".method-name");
-  for(let methodIdx =0; methodIdx < methods.length; methodIdx++) {
-    if(methods[methodIdx].innerHTML == method) {
-      methods[methodIdx].click();
-      break;
+    const methods = selectedSection.parentNode.children[1].querySelectorAll(".method-name");
+    for(let methodIdx =0; methodIdx < methods.length; methodIdx++) {
+      if(methods[methodIdx].innerHTML == method) {
+        methods[methodIdx].click();
+        break;
+      }
     }
-  }
+
+    // checks if editor section is loaded & has name of method.
+    let codeLoadedInterval = null;
+    const isCodeLoaded = () => {
+      if (editorContainsText(method)) {
+        clearInterval(codeLoadedInterval);
+        codeLoadedInterval = undefined;
+        resolve();
+      } else {
+        setInterval(isCodeLoaded, 200);
+      }
+    };
+    codeLoadedInterval = setInterval(isCodeLoaded, 200);
+  });
 };
 
+/**
+ * Iterates through list of channels and return names.
+ * @param {*} connector 
+ */
 const getConnectors = async (connector) => {
   return new Promise((resolve, reject) => {
     const channelNameElems = document.querySelectorAll(".channel-list-item .channel-name");
@@ -406,24 +579,32 @@ const getConnectors = async (connector) => {
   });
 };
 
+/**
+ * Opens each section in left nav
+ * Reads name of each function
+ * Saves the method names in datastore.
+ */
 const recordConnectorInfo = async () => {
   let sections =  document.querySelectorAll(".left-nav .left-nav-category");
   if (sections && sections.length > 0) {
    for (let sectionIdx = 1; sectionIdx < sections.length-2; sectionIdx++) {
      await openSection(sectionIdx);
  
-     const section  = getSectionFromIndex(sectionIdx);
-     if (!datastore[section]) {
-       datastore[section] = [];
-     }
-     const methods = getMethodsInSection(sections[sectionIdx]);
+     const section  = getSectionNameFromIndex(sectionIdx);
+     const methods = getMethodsInSection(getSectionNameFromIndex(sectionIdx));
      datastore[section] = methods;
    }
   }
  };
  
+ /**
+  * get methods in a section
+  * @param {*} section (events | actions | functions)
+  */
  const getMethodsInSection = (section) => {
-   const parent = section.parentNode;
+  let sections =  document.querySelectorAll(".left-nav .left-nav-category");
+  const sectionHtmlElem = sections.item(FIELD_SECTION_INDEX_MAPPING[section]);
+   const parent = sectionHtmlElem.parentNode;
    const result = [];
    if (parent) {
      const sectionMethods =  parent.children[1].querySelectorAll(".method-name");
@@ -434,7 +615,11 @@ const recordConnectorInfo = async () => {
    return result;
  }
  
- const selectConnector = (connector) => {
+ /**
+  * Clicks the opens filter section on the left nave and clicks the list item
+  * @param {} connector (name of connector eg. marketo2_29)
+  */
+ const openConnector = (connector) => {
    return new Promise((resolve, reject) => {
     const channelNames = document.querySelectorAll(".channel-list-item .channel-name");
     for( let channelNameIdx = 0; channelNameIdx < channelNames.length; channelNameIdx++) {
@@ -446,25 +631,23 @@ const recordConnectorInfo = async () => {
 
     // when connector is selected, 
     // default click handler of extn is triggered it opens a loading modal, it's closure means connector is selected.
-    let waitForModalClosedInterval = null;
+    let loadingModalClosedInterval = null;
     let isModalClosed = () => {
       const modalEnabled = isModalEnabled();
       if (!modalEnabled) {
-        clearInterval(waitForModalClosedInterval);
-        waitForModalClosedInterval = undefined;
+        clearInterval(loadingModalClosedInterval);
+        loadingModalClosedInterval = undefined;
         setTimeout(() => {
           resolve();
         }, 200);
       } else {
-        clearInterval(waitForModalClosedInterval);
-        waitForModalClosedInterval = setInterval(isModalClosed, 200);
+        clearInterval(loadingModalClosedInterval);
+        loadingModalClosedInterval = setInterval(isModalClosed, 200);
       }
     };
-    waitForModalClosedInterval = setInterval(isModalClosed, 200);
+    loadingModalClosedInterval = setInterval(isModalClosed, 200);
    });
  };
-
-
 
 
 //============================ EXTENSION ENTRY POINT =====================================//
@@ -492,11 +675,20 @@ if (channelDropdown) {
   })
 }
 
-// show the search modal
+/**
+ * Registers listeners for DOM  key events.
+ */
 document.addEventListener('keydown', (e) => {
   // ctrl + 1,
   if (e.ctrlKey && e.keyCode== 49) {
     showSpotlightModal();
+  }
+
+  console.log(e.keyCode);
+   // ctrl + 
+  if (e.ctrlKey && e.keyCode== 50) {
+    console.log("==== reach here ===");
+    showReferenceModal();
   }
   
   const selectField = (selectedOptionIdx) => {
@@ -524,5 +716,3 @@ document.addEventListener('keydown', (e) => {
     selectField(0);
   }
 });
-
-
