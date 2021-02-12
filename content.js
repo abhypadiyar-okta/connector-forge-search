@@ -61,11 +61,23 @@ const getEditorValue = () => {
 }
 
 const editorContainsText = (text) => {
-  const stringValues = [];
-  document.querySelectorAll("#brace-editor .ace_string").forEach(e => stringValues.push(e.innerHTML));
-  console.log(stringValues);
-  return stringValues.includes(`\"${text}\"`);
+  const editorVal = getEditorValue();
+  return editorVal.includes(text);
 }
+
+
+const getCurrentConnector = () => {
+  if (currentConnector && currentConnector.length > 0) {
+    return currentConnector;
+  }
+
+  const connectorNameNode = document.querySelector(".channel-selector-button h2");
+  if (connectorNameNode) {
+    currentConnector = connectorNameNode.innerText;
+    return currentConnector;
+  }
+  return currentConnector;
+};
 
 // ============================= MODAL COMMONS ============================= //
 const createModalNode = () => {
@@ -108,19 +120,22 @@ const createReferenceModalNode = () => {
         </div>
         <div class="fs-code-search__connector">
           <h3> 
-            <i id="fs-connector-sync" class="icon fa fa-refresh"></i>
-            <span>Connector: [ ${currentConnector || "-"} ]</span>
+            <span>Connector: [ ${getCurrentConnector() || "-"} ]</span>
           </h3>
           <span id="fs-connector-sync__message"></p>
         </div>
       </section>
-      <br />
+      <div>
+        <i class="icon fa fa-info-circle"></i> 
+        <span>Enter name of function to search parts of connector referencing it </span>
+      </div>
+      <hr />
       <section class='fs-code-search__filter' id="fs-code-search__filter" >
         <div class="fs-code-search__field-input">
           <input 
             autofocus 
             type="text" 
-            placeholder="Enter name of function" 
+            placeholder="Enter full name of function" 
             id="fs-filter-input" 
             style="width:98%; min-width: 500px"
           />
@@ -164,25 +179,41 @@ const registerReferenceListeners = async () => {
     if (e.keyCode == 13) {
       const funcName = document.querySelector("#fs-code-search__filter input").value;
 
-      if (!currentConnector) {
-        modalInfoMessage("It works when you in context of conenctor, please Esc & Ctrl+1 to select connector", "error");
+      const connector = getCurrentConnector();
+      if (!connector) {
+        modalInfoMessage("It works when you in context of conenctor, select a connector", "error");
         return;
       }
 
       modalInfoMessage("Finding references ....", "info");
-      const references = await getReferences(funcName);
-      console.log(references);
+      let references = await getReferences(funcName);
+      references = references.filter(r => r.method != funcName);
 
-      // if (!references || references.length  == 0) {
-      //   modalInfoMessage("No matching results found meeting your request", "error");
-      //   return;
-      // }
+      if (!references || references.length  == 0) {
+        modalInfoMessage("No matching results found meeting your request", "error");
+        return;
+      }
 
-      // const ul = document.querySelector("#fs-code-search__filter ul");
-      // references.forEach(reference => {
-      //   const li = createSpotlightResultListItem(reference, {connector: currentConnector, method: reference.method, field: reference.field});
-      //   ul.appendChild(li);
-      // });
+      const ul = document.querySelector("#fs-code-search__list ul");
+      ul.innerHTML = "";
+      references.forEach(reference => {
+        const li = createSpotlightResultListItem(reference.method, {connector, method: reference.method, field: reference.field});
+        ul.appendChild(li);
+      });
+
+      const lis = document.querySelectorAll("#fs-code-search__list ul li");
+      lis.forEach((li) => {
+        li.addEventListener('click', async (e) => {
+          const connector = e.target.getAttribute("data-connector");
+          const method = e.target.getAttribute("data-method");
+          const field = e.target.getAttribute("data-field");
+
+          await openSection(field);
+          await openMethod(field, method);
+
+          hideModal();
+        });
+      });
     }
   });  
 };
@@ -197,11 +228,9 @@ const getReferences = async (searchText) => {
     const methods = getMethodsInSection(section);
     for (let methodIdx = 0; methodIdx < methods.length; methodIdx++) {
       const method = methods[methodIdx];
-      console.log("==== method === " + method);
       await openMethod(section, method);
       if (editorContainsText(searchText)) {
-        console.log("HAS METHOD ====!!!!");
-        result.push({method: method, section})
+        result.push({method: method, field: section})
       }
     }
   }
@@ -258,6 +287,7 @@ const loadConnectors = async () => {
 
 const createSpotlightModalNode = () => {
   hideModal();
+  const connector = getCurrentConnector();
   const modal = createModalNode();
   const spotlightContent = `
     <div class="fs-code-search">
@@ -268,13 +298,18 @@ const createSpotlightModalNode = () => {
         <div class="fs-code-search__connector">
           <h3> 
             <i id="fs-connector-sync" class="icon fa fa-refresh"></i>
-            <span>Connector: [ ${currentConnector || "-"} ]</span>
+            <span>Connector: [ ${connector || "-"} ]</span>
           </h3>
           <span id="fs-connector-sync__message"></p>
         </div>
       </section>
-      <br />
+      <div>
+        <i class="icon fa fa-info-circle"></i> 
+        <span> Search and open action, event, function quickly. </span>
+      </div>
+      <hr />
       <section class='fs-code-search__filter' id="fs-code-search__filter" >
+        <br />
         <div>
           <select>
             <option value='connectors'>Connectors</option>
@@ -330,13 +365,13 @@ const registerSpotlightModalListeners = () => {
     document.querySelector("#fs-code-search__filter input").value = "";
     document.querySelector("#fs-code-search__list ul").innerHTML = "";
   });
-
+  const connector = getCurrentConnector();
   // case: on enter in input field, update results, register listeners for results.
   const fieldInput = document.querySelector("#fs-code-search__filter input");
   fieldInput.addEventListener('keydown', e => {
     if (e.keyCode == 13) {
       const field = document.querySelector("#fs-code-search__filter select").value;
-      if (currentConnector.length == 0 && field !== "connectors") {
+      if (connector.length == 0 && field !== "connectors") {
         modalInfoMessage("Please select a connector by Ctrl+c to set connector option, enter a value in input box and press enter to see results", "error");
         return;
       }
@@ -369,10 +404,11 @@ const registerSpotlightModalListeners = () => {
       }
 
       if (field === "actions" || field == "events" || field == "functions") {
+        const connector = getCurrentConnector();
         document.querySelector("#fs-code-search__list ul").innerHTML = "";
         const ul = document.querySelector("#fs-code-search__list ul");
         matchingResults.forEach(matchingResult => {
-          const li = createSpotlightResultListItem(matchingResult, {connector: currentConnector, field, method: matchingResult});
+          const li = createSpotlightResultListItem(matchingResult, {connector, field, method: matchingResult});
           ul.appendChild(li);
         });
 
@@ -398,6 +434,7 @@ const registerSpotlightModalListeners = () => {
   // case: handle recent button click.
   const recentButton = document.querySelector("#fs-code-search__filter button");
   recentButton.addEventListener('click', async (e) => {
+    const connector = getCurrentConnector();
     document.querySelector("#fs-code-search__list ul").innerHTML = "";
     const ul = document.querySelector("#fs-code-search__list ul");
 
@@ -564,19 +601,16 @@ const openMethod = async (section , method) => {
     let codeLoadedInterval = null;
     const isCodeLoaded = () => {
       if (count <=0) {
-        console.log("=== reached count exit ===");
         clearTimeout(codeLoadedInterval);
         codeLoadedInterval = undefined;
         resolve();
         return;
       }
       if (editorContainsText(method)) {
-        console.log("=== reached clean resolve ===");
         clearTimeout(codeLoadedInterval);
         codeLoadedInterval = undefined;
         resolve();
       } else {
-        console.log("=== reached wait ===");
         count--;
         codeLoadedInterval = setTimeout(isCodeLoaded, 200);
       }
@@ -704,10 +738,8 @@ document.addEventListener('keydown', (e) => {
     showSpotlightModal();
   }
 
-  console.log(e.keyCode);
-   // ctrl + 
+   // ctrl + 2
   if (e.ctrlKey && e.keyCode== 50) {
-    console.log("==== reach here ===");
     showReferenceModal();
   }
   

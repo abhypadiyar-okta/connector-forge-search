@@ -8,10 +8,11 @@
       "matches": [
         "https://build.betaui.azuqua.com/*"
       ],
-      "js": ["content.js"],
+      "js": ["content1.js"],
       "css": ["forgeSearch.css"]
     }
   ],
+  "web_accessible_resources": ["content.js"],
   "icons": { 
     "16": "icon16.png",
     "32": "icon48.png",
